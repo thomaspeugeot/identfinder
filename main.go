@@ -32,7 +32,7 @@ func main() {
 		maxResults int
 	)
 	flag.IntVar(&minStars, "stars", 1000, "Minimum number of stars")
-	flag.IntVar(&maxStars, "maxstars", 5000, "Maximum number of stars")
+	flag.IntVar(&maxStars, "maxstars", 7000, "Maximum number of stars")
 	flag.IntVar(&maxResults, "max", 5, "Max number of repositories to process")
 	flag.Parse()
 
