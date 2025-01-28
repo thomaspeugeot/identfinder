@@ -28,9 +28,11 @@ var (
 func main() {
 	var (
 		minStars   int
+		maxStars   int
 		maxResults int
 	)
 	flag.IntVar(&minStars, "stars", 1000, "Minimum number of stars")
+	flag.IntVar(&maxStars, "maxstars", 5000, "Maximum number of stars")
 	flag.IntVar(&maxResults, "max", 5, "Max number of repositories to process")
 	flag.Parse()
 
@@ -39,8 +41,8 @@ func main() {
 
 	client := github.NewClient(tc)
 
-	// Search for Go repos with >= minStars stars
-	query := fmt.Sprintf("language:Go stars:>=%d", minStars)
+	// Search for Go repos with >= minStars and < maxStars stars
+	query := fmt.Sprintf("language:Go stars:%d..%d", minStars, maxStars)
 	searchOpts := &github.SearchOptions{
 		Sort:  "stars",
 		Order: "desc",
@@ -77,18 +79,38 @@ func main() {
 			return nil
 		})
 
+		var totalLines, stringLines, repoTotalStrings, repoMatchedStrings int
+
 		for _, fpath := range goFiles {
-			analyzeFile(fpath)
+			lines, strLines, matchedStrs := analyzeFileWithLines(fpath)
+			totalLines += lines
+			stringLines += strLines
+			repoTotalStrings += strLines
+			repoMatchedStrings += matchedStrs
 		}
+
+		// Calculate ratios for the repository
+		repoLineRatio := 0.0
+		repoStringRatio := 0.0
+		if totalLines > 0 {
+			repoLineRatio = float64(stringLines) / float64(totalLines)
+		}
+		if repoTotalStrings > 0 {
+			repoStringRatio = float64(repoMatchedStrings) / float64(repoTotalStrings)
+		}
+		log.Printf("Repository %s: String to total line ratio: %.4f (%d string lines / %d total lines)\n",
+			repo.GetFullName(), repoLineRatio, stringLines, totalLines)
+		log.Printf("Repository %s: Matched strings to total strings ratio: %.4f (%d matched / %d total strings)\n",
+			repo.GetFullName(), repoStringRatio, repoMatchedStrings, repoTotalStrings)
 	}
 
 	// Print ratio of “strings that contained an identifier” to “total strings seen”
-	ratio := 0.0
+	overallRatio := 0.0
 	if totalStrings > 0 {
-		ratio = float64(matchedStrings) / float64(totalStrings)
+		overallRatio = float64(matchedStrings) / float64(totalStrings)
 	}
-	log.Printf("Detected ratio: %.4f (%d matched / %d total)\n",
-		ratio, matchedStrings, totalStrings)
+	log.Printf("Overall identifier match ratio: %.4f (%d matched / %d total)\n",
+		overallRatio, matchedStrings, totalStrings)
 }
 
 // cloneRepo does a shallow clone
@@ -98,83 +120,61 @@ func cloneRepo(gitURL, dest string) error {
 	return cmd.Run()
 }
 
-func analyzeFile(filePath string) {
+func analyzeFileWithLines(filePath string) (int, int, int) {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filePath, nil, parser.AllErrors)
 	if err != nil {
 		// could not parse the file
-		return
+		return 0, 0, 0
 	}
 
-	// For each function declaration, gather identifiers (func + params)
-	// Then look for string literals in that function's body,
-	// increment counters if a match is found.
+	totalLines := 0
+	stringLines := 0
+	matchedStrs := 0
+
 	ast.Inspect(node, func(n ast.Node) bool {
-		funcDecl, ok := n.(*ast.FuncDecl)
-		if !ok {
+		if n == nil {
+			return false
+		}
+
+		// Increment total lines
+		pos := fset.Position(n.Pos())
+		if pos.IsValid() {
+			totalLines++
+		}
+
+		basicLit, ok := n.(*ast.BasicLit)
+		if !ok || basicLit.Kind != token.STRING {
 			return true
 		}
 
-		var identifiers []string
-		funcName := funcDecl.Name.Name
-		identifiers = append(identifiers, funcName)
+		literalText := strings.Trim(basicLit.Value, "`\"")
+		totalStrings++
+		stringLines++
 
-		if funcDecl.Type.Params != nil {
-			for _, field := range funcDecl.Type.Params.List {
-				for _, name := range field.Names {
-					identifiers = append(identifiers, name.Name)
-				}
-			}
-		}
-
-		if funcDecl.Body == nil {
-			return true
-		}
-
-		ast.Inspect(funcDecl.Body, func(b ast.Node) bool {
-			basicLit, ok := b.(*ast.BasicLit)
-			if !ok || basicLit.Kind != token.STRING {
-				return true
-			}
-			// Strip quotes from the literal value
-			literalText := strings.Trim(basicLit.Value, "`\"")
-
-			totalStrings++ // We encountered one string literal overall
-
-			// We only count this string once if it references any identifier
-			foundAny := false
-			for _, id := range identifiers {
-				if containsIdentifier(literalText, id) {
-					if !foundAny {
-						matchedStrings++
-						foundAny = true
-					}
-					// Print a debug message about the match
-					fmt.Printf("[MATCH] %s: Found string %q containing identifier %q (Func: %s)\n",
-						filePath, literalText, id, funcName)
+		ast.Inspect(n, func(inner ast.Node) bool {
+			if funcDecl, ok := inner.(*ast.FuncDecl); ok {
+				funcName := funcDecl.Name.Name
+				if containsIdentifier(literalText, funcName) {
+					matchedStrings++
+					matchedStrs++
 				}
 			}
 			return true
 		})
-
-		return false
+		return true
 	})
 
+	return totalLines, stringLines, matchedStrs
 }
 
 // containsIdentifier returns true if `literal` contains `id` as a separate “word”
 // and is NOT preceded directly by '%' or '\'.
-//
-// We still do a word-boundary match using \b on both sides. After finding
-// a potential match, we check the character before that match to ensure it
-// is not '%' or '\'.
 func containsIdentifier(literal, id string) bool {
-	// Regex: \b id \b
 	re := regexp.MustCompile(`\b` + regexp.QuoteMeta(id) + `\b`)
 	matches := re.FindAllStringIndex(literal, -1)
 	for _, m := range matches {
 		start := m[0]
-		// If there's a preceding character, it must NOT be '%' or '\'
 		if start > 0 {
 			prev := literal[start-1]
 			if prev == '%' || prev == '\\' {
