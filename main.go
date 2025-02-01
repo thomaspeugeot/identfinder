@@ -32,7 +32,7 @@ func main() {
 		maxResults int
 	)
 	flag.IntVar(&minStars, "stars", 1000, "Minimum number of stars")
-	flag.IntVar(&maxStars, "maxstars", 7000, "Maximum number of stars")
+	flag.IntVar(&maxStars, "maxstars", 9000, "Maximum number of stars")
 	flag.IntVar(&maxResults, "max", 5, "Max number of repositories to process")
 	flag.Parse()
 
@@ -120,48 +120,72 @@ func cloneRepo(gitURL, dest string) error {
 	return cmd.Run()
 }
 
+// analyzeFileWithLines parses a single Go file, counts total lines,
+// gathers all top-level identifiers, and checks each string literal
+// to see if it contains one of those identifiers.
 func analyzeFileWithLines(filePath string) (int, int, int) {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filePath, nil, parser.AllErrors)
 	if err != nil {
-		// could not parse the file
+		// Could not parse the file
 		return 0, 0, 0
 	}
 
-	totalLines := 0
+	// 1) Determine total line count
+	fileObj := fset.File(node.Pos())
+	if fileObj == nil {
+		// If something is off or we got no file, just return zeros
+		return 0, 0, 0
+	}
+	totalLines := fileObj.LineCount()
+
+	// 2) Gather all top-level identifiers: functions, types, variables, constants
+	var identifiers []string
+	for _, decl := range node.Decls {
+		switch d := decl.(type) {
+		case *ast.FuncDecl:
+			identifiers = append(identifiers, d.Name.Name)
+		case *ast.GenDecl:
+			for _, spec := range d.Specs {
+				switch s := spec.(type) {
+				case *ast.TypeSpec:
+					identifiers = append(identifiers, s.Name.Name)
+				case *ast.ValueSpec:
+					for _, n := range s.Names {
+						identifiers = append(identifiers, n.Name)
+					}
+				}
+			}
+		}
+	}
+
+	// 3) Inspect for string literals and check for any identifier usage
 	stringLines := 0
 	matchedStrs := 0
 
 	ast.Inspect(node, func(n ast.Node) bool {
-		if n == nil {
-			return false
-		}
-
-		// Increment total lines
-		pos := fset.Position(n.Pos())
-		if pos.IsValid() {
-			totalLines++
-		}
-
 		basicLit, ok := n.(*ast.BasicLit)
 		if !ok || basicLit.Kind != token.STRING {
 			return true
 		}
 
+		// Remove quotes/backticks
 		literalText := strings.Trim(basicLit.Value, "`\"")
+
+		// Global total strings count
 		totalStrings++
 		stringLines++
 
-		ast.Inspect(n, func(inner ast.Node) bool {
-			if funcDecl, ok := inner.(*ast.FuncDecl); ok {
-				funcName := funcDecl.Name.Name
-				if containsIdentifier(literalText, funcName) {
-					matchedStrings++
-					matchedStrs++
-				}
+		// Check if this string contains any of the known identifiers
+		for _, id := range identifiers {
+			if containsIdentifier(literalText, id) {
+				// Global match count
+				matchedStrings++
+				// Local match count
+				matchedStrs++
+				break // Stop at first match to avoid double-count
 			}
-			return true
-		})
+		}
 		return true
 	})
 
@@ -171,10 +195,12 @@ func analyzeFileWithLines(filePath string) (int, int, int) {
 // containsIdentifier returns true if `literal` contains `id` as a separate “word”
 // and is NOT preceded directly by '%' or '\'.
 func containsIdentifier(literal, id string) bool {
+	// Use word boundaries to ensure it's a separate word.
 	re := regexp.MustCompile(`\b` + regexp.QuoteMeta(id) + `\b`)
 	matches := re.FindAllStringIndex(literal, -1)
 	for _, m := range matches {
 		start := m[0]
+		// Check preceding character to ensure not '%' or '\'
 		if start > 0 {
 			prev := literal[start-1]
 			if prev == '%' || prev == '\\' {
