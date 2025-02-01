@@ -25,6 +25,14 @@ var (
 	matchedStrings int
 )
 
+// matchInfo holds details about each matched line/string.
+type matchInfo struct {
+	File       string
+	LineNumber int
+	Identifier string
+	Literal    string
+}
+
 func main() {
 	var (
 		minStars   int
@@ -32,7 +40,7 @@ func main() {
 		maxResults int
 	)
 	flag.IntVar(&minStars, "stars", 1000, "Minimum number of stars")
-	flag.IntVar(&maxStars, "maxstars", 9000, "Maximum number of stars")
+	flag.IntVar(&maxStars, "maxstars", 7500, "Maximum number of stars")
 	flag.IntVar(&maxResults, "max", 5, "Max number of repositories to process")
 	flag.Parse()
 
@@ -80,13 +88,18 @@ func main() {
 		})
 
 		var totalLines, stringLines, repoTotalStrings, repoMatchedStrings int
+		allMatches := make([]matchInfo, 0) // collect matches for each repo
 
 		for _, fpath := range goFiles {
-			lines, strLines, matchedStrs := analyzeFileWithLines(fpath)
+			lines, strLines, matchedStrs, matches := analyzeFileWithLines(fpath)
 			totalLines += lines
 			stringLines += strLines
 			repoTotalStrings += strLines
 			repoMatchedStrings += matchedStrs
+
+			if len(matches) > 0 {
+				allMatches = append(allMatches, matches...)
+			}
 		}
 
 		// Calculate ratios for the repository
@@ -102,6 +115,29 @@ func main() {
 			repo.GetFullName(), repoLineRatio, stringLines, totalLines)
 		log.Printf("Repository %s: Matched strings to total strings ratio: %.4f (%d matched / %d total strings)\n",
 			repo.GetFullName(), repoStringRatio, repoMatchedStrings, repoTotalStrings)
+
+		// If we got any matches, write them to a local file in the same directory
+		// as this main.go. Filenames like "owner-repo-matches.log".
+		if len(allMatches) > 0 {
+			reportFile := strings.ReplaceAll(repo.GetFullName(), "/", "-") + "-matches.log"
+			f, err := os.Create(reportFile)
+			if err != nil {
+				log.Printf("Error creating report file %s: %v", reportFile, err)
+				continue
+			}
+
+			defer f.Close()
+
+			// Write out each match
+			for _, m := range allMatches {
+				line := fmt.Sprintf("%s:%d -> identifier=%s; literal=%q\n",
+					m.File, m.LineNumber, m.Identifier, m.Literal)
+				_, _ = f.WriteString(line)
+			}
+
+			log.Printf("Wrote %d matches for %s to %s\n",
+				len(allMatches), repo.GetFullName(), reportFile)
+		}
 	}
 
 	// Print ratio of “strings that contained an identifier” to “total strings seen”
@@ -121,21 +157,21 @@ func cloneRepo(gitURL, dest string) error {
 }
 
 // analyzeFileWithLines parses a single Go file, counts total lines,
-// gathers all top-level identifiers, and checks each string literal
-// to see if it contains one of those identifiers.
-func analyzeFileWithLines(filePath string) (int, int, int) {
+// gathers all top-level identifiers, checks each string literal
+// to see if it contains any of those identifiers, and returns match details.
+func analyzeFileWithLines(filePath string) (int, int, int, []matchInfo) {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filePath, nil, parser.AllErrors)
 	if err != nil {
 		// Could not parse the file
-		return 0, 0, 0
+		return 0, 0, 0, nil
 	}
 
 	// 1) Determine total line count
 	fileObj := fset.File(node.Pos())
 	if fileObj == nil {
 		// If something is off or we got no file, just return zeros
-		return 0, 0, 0
+		return 0, 0, 0, nil
 	}
 	totalLines := fileObj.LineCount()
 
@@ -159,48 +195,55 @@ func analyzeFileWithLines(filePath string) (int, int, int) {
 		}
 	}
 
-	// 3) Inspect for string literals and check for any identifier usage
 	stringLines := 0
 	matchedStrs := 0
+	matches := make([]matchInfo, 0)
 
+	// 3) Inspect AST for string literals
 	ast.Inspect(node, func(n ast.Node) bool {
 		basicLit, ok := n.(*ast.BasicLit)
 		if !ok || basicLit.Kind != token.STRING {
 			return true
 		}
 
-		// Remove quotes/backticks
+		// Clean up the string literal (remove quotes/backticks)
 		literalText := strings.Trim(basicLit.Value, "`\"")
 
 		// Global total strings count
 		totalStrings++
 		stringLines++
 
-		// Check if this string contains any of the known identifiers
 		for _, id := range identifiers {
 			if containsIdentifier(literalText, id) {
 				// Global match count
 				matchedStrings++
-				// Local match count
 				matchedStrs++
-				break // Stop at first match to avoid double-count
+
+				// Store match details (file path, line number, etc.)
+				pos := fset.Position(basicLit.Pos())
+				matches = append(matches, matchInfo{
+					File:       filePath,
+					LineNumber: pos.Line,
+					Identifier: id,
+					Literal:    literalText,
+				})
+				// Break after first successful match to avoid double-counting
+				break
 			}
 		}
 		return true
 	})
 
-	return totalLines, stringLines, matchedStrs
+	return totalLines, stringLines, matchedStrs, matches
 }
 
 // containsIdentifier returns true if `literal` contains `id` as a separate “word”
 // and is NOT preceded directly by '%' or '\'.
 func containsIdentifier(literal, id string) bool {
-	// Use word boundaries to ensure it's a separate word.
 	re := regexp.MustCompile(`\b` + regexp.QuoteMeta(id) + `\b`)
 	matches := re.FindAllStringIndex(literal, -1)
 	for _, m := range matches {
 		start := m[0]
-		// Check preceding character to ensure not '%' or '\'
 		if start > 0 {
 			prev := literal[start-1]
 			if prev == '%' || prev == '\\' {
