@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/google/go-github/v48/github"
 	"golang.org/x/oauth2"
@@ -75,7 +76,7 @@ func main() {
 			log.Printf("Error cloning %s: %v", repo.GetFullName(), err)
 			continue
 		}
-		// defer os.RemoveAll(tmpDir)
+		defer os.RemoveAll(tmpDir)
 
 		goFiles := gatherGoFiles(tmpDir)
 
@@ -96,7 +97,6 @@ func main() {
 		if totalLines > 0 {
 			repoLineRatio = float64(stringLines) / float64(totalLines)
 		}
-
 		repoStringRatio := 0.0
 		if repoTotalStrings > 0 {
 			repoStringRatio = float64(repoMatchedStrings) / float64(repoTotalStrings)
@@ -107,7 +107,7 @@ func main() {
 		log.Printf("Repository %s: Matched-strings-to-total-strings ratio: %.4f (%d matched / %d total strings)\n",
 			repo.GetFullName(), repoStringRatio, repoMatchedStrings, repoTotalStrings)
 
-		// If we have matches, write them to a local file
+		// Write matches to a file if any
 		if len(allMatches) > 0 {
 			reportFile := strings.ReplaceAll(repo.GetFullName(), "/", "-") + "-matches.log"
 			f, err := os.Create(reportFile)
@@ -124,7 +124,6 @@ func main() {
 				)
 				_, _ = f.WriteString(line)
 			}
-
 			log.Printf("Wrote %d matches for %s to %s\n",
 				len(allMatches), repo.GetFullName(), reportFile)
 		}
@@ -185,16 +184,29 @@ func analyzeFileWithLines(filePath string) (int, int, int, []matchInfo) {
 	v := newScopeVisitor(fset, filePath, srcLines)
 	ast.Walk(v, node)
 
-	// Add to global counters
 	return totalLines, v.stringCount, v.matchCount, v.matches
+}
+
+// readFileLines returns a slice of all lines in the given file.
+func readFileLines(filePath string) ([]string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	return lines, scanner.Err()
 }
 
 // -------------------------------------------------------------------
 // Scope Tracking Visitor
 // -------------------------------------------------------------------
 
-// scopeVisitor holds state for AST traversal.
-// - We keep a stack of scopes, each scope holds a set of names in scope.
 type scopeVisitor struct {
 	fset        *token.FileSet
 	filePath    string
@@ -216,31 +228,27 @@ func newScopeVisitor(fset *token.FileSet, filePath string, srcLines []string) *s
 		fset:     fset,
 		filePath: filePath,
 		srcLines: srcLines,
-		// Start with a global "empty" scope
-		scopeStack: []*scope{{names: make(map[string]struct{})}},
+		scopeStack: []*scope{
+			{names: make(map[string]struct{})}, // global scope
+		},
 	}
 }
 
-// Push a new scope on the stack
 func (v *scopeVisitor) pushScope() {
-	v.scopeStack = append(v.scopeStack, &scope{
-		names: make(map[string]struct{}),
-	})
+	v.scopeStack = append(v.scopeStack, &scope{names: make(map[string]struct{})})
 }
 
-// Pop the current scope
 func (v *scopeVisitor) popScope() {
 	v.scopeStack = v.scopeStack[:len(v.scopeStack)-1]
 }
 
-// Add a name to the top scope
 func (v *scopeVisitor) addName(name string) {
 	top := v.scopeStack[len(v.scopeStack)-1]
 	top.names[name] = struct{}{}
 }
 
-// inScope returns all names from the top scopes combined
 func (v *scopeVisitor) inScope() []string {
+	// gather all names from all active scopes
 	var results []string
 	for _, s := range v.scopeStack {
 		for n := range s.names {
@@ -250,48 +258,56 @@ func (v *scopeVisitor) inScope() []string {
 	return results
 }
 
-// Visit is the main entry point for our AST walk.
 func (v *scopeVisitor) Visit(n ast.Node) ast.Visitor {
 	switch node := n.(type) {
+
 	case *ast.File:
-		// File-level declarations (types, funcs, vars, consts)
-		// go through them below via ast.Walk, so no immediate push/pop here
+		// We'll walk node.Decls anyway, so just return v
 		return v
 
 	case *ast.FuncDecl:
-		// We push a scope for the function.
+		// Push a new scope for the function
 		v.pushScope()
-		// Add the function name
+		// Add the function name itself
 		v.addName(node.Name.Name)
-		// Add parameter names
-		for _, p := range node.Type.Params.List {
-			for _, paramName := range p.Names {
-				v.addName(paramName.Name)
+		// Add function parameters
+		if node.Type.Params != nil {
+			for _, param := range node.Type.Params.List {
+				for _, pName := range param.Names {
+					v.addName(pName.Name)
+				}
 			}
 		}
-		// Walk the function's body with a child visitor
-		ast.Walk(v, node.Body)
-		// After traversing the body, pop the scope
+		// Add function results (if they are named)
+		if node.Type.Results != nil {
+			for _, result := range node.Type.Results.List {
+				for _, rName := range result.Names {
+					v.addName(rName.Name)
+				}
+			}
+		}
+		// Walk the function body
+		if node.Body != nil {
+			ast.Walk(v, node.Body)
+		}
 		v.popScope()
-		// Return nil so we don't re-traverse the body
+		// Return nil so we don’t re-walk
 		return nil
 
 	case *ast.BlockStmt:
-		// We push a scope for each block
+		// Push a block scope
 		v.pushScope()
 		for _, stmt := range node.List {
 			ast.Walk(v, stmt)
 		}
 		v.popScope()
-		// Return nil so we don't re-traverse
 		return nil
 
 	case *ast.AssignStmt:
-		// For short variable declarations: `x := 123`
-		// we add these names to the top scope
+		// For short variable declarations x := expr
 		if node.Tok.String() == ":=" {
-			for _, expr := range node.Lhs {
-				if ident, ok := expr.(*ast.Ident); ok {
+			for _, lh := range node.Lhs {
+				if ident, ok := lh.(*ast.Ident); ok {
 					v.addName(ident.Name)
 				}
 			}
@@ -299,7 +315,7 @@ func (v *scopeVisitor) Visit(n ast.Node) ast.Visitor {
 		return v
 
 	case *ast.DeclStmt:
-		// This is a local declaration like `var x int` or `const y = ...`
+		// Local var/const/type declarations
 		if gen, ok := node.Decl.(*ast.GenDecl); ok {
 			for _, spec := range gen.Specs {
 				switch s := spec.(type) {
@@ -315,32 +331,26 @@ func (v *scopeVisitor) Visit(n ast.Node) ast.Visitor {
 		return v
 
 	case *ast.BasicLit:
-		// If it's a string, check for in-scope references
+		// Check string literals
 		if node.Kind == token.STRING {
 			v.stringCount++
 			v.checkString(node)
 		}
 	}
-
 	return v
 }
 
-// checkString checks the given string literal for any in-scope identifiers.
 func (v *scopeVisitor) checkString(basicLit *ast.BasicLit) {
 	literalText := strings.Trim(basicLit.Value, "`\"")
 	linePos := v.fset.Position(basicLit.Pos()).Line
 
-	// Gather all names in scope
+	// Check each in-scope identifier
 	names := v.inScope()
-
-	// For each name, check if the string literal contains it
-	// (and skip if preceded by '%' or '\').
 	for _, name := range names {
 		if containsIdentifier(literalText, name) {
-			// Once we find a match, record it and stop to avoid double counting.
+			// Found a valid match
 			v.matchCount++
 			matchedStrings++
-			// We'll log the entire line from source
 			entireLine := ""
 			if linePos-1 >= 0 && linePos-1 < len(v.srcLines) {
 				entireLine = v.srcLines[linePos-1]
@@ -352,55 +362,77 @@ func (v *scopeVisitor) checkString(basicLit *ast.BasicLit) {
 				StringText: literalText,
 				EntireLine: entireLine,
 			})
+			// We stop at the first matching identifier to avoid “double counting.”
 			break
 		}
 	}
 
-	// Also increment the global total string count
+	// Also increment global total string count
 	totalStrings++
 }
 
-// -------------------------------------------------------------------
-// Helpers
-// -------------------------------------------------------------------
-
-// readFileLines returns a slice of all lines in the given file.
-func readFileLines(filePath string) ([]string, error) {
-	f, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	var lines []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-	return lines, scanner.Err()
-}
-
-// containsIdentifier checks if `literal` contains `id` as a substring
-// that is not directly preceded by '%' or '\'.
+// containsIdentifier returns true if `id` appears in `literal` such that it’s
+// “surrounded by spaces, quotes, or punctuation” and NOT preceded directly
+// by '%' or '\'. This avoids partial matches like “r” in “form-urlencoded”.
 func containsIdentifier(literal, id string) bool {
-	idx := 0
+	if id == "" {
+		return false
+	}
+
+	searchStart := 0
 	for {
-		loc := strings.Index(literal[idx:], id)
-		if loc < 0 {
+		idx := strings.Index(literal[searchStart:], id)
+		if idx == -1 {
 			break
 		}
-		absPos := idx + loc
+		// Absolute position in the literal
+		pos := searchStart + idx
+		end := pos + len(id) - 1
 
 		// Check preceding char
-		if absPos > 0 {
-			prev := literal[absPos-1]
-			if prev == '%' || prev == '\\' {
-				// skip this occurrence, continue searching
-				idx = absPos + len(id)
+		if pos > 0 {
+			prev := rune(literal[pos-1])
+			// If it's '\' or '%', skip
+			if prev == '\\' || prev == '%' {
+				searchStart = pos + len(id)
+				continue
+			}
+			// Must be a boundary if it's not start-of-string
+			if !isBoundary(prev) {
+				searchStart = pos + len(id)
+				continue
+			}
+		}
+		// Check following char
+		if end < len(literal)-1 {
+			next := rune(literal[end+1])
+			if !isBoundary(next) {
+				searchStart = pos + 1
 				continue
 			}
 		}
 		return true
 	}
+	return false
+}
+
+// isBoundary returns true if r is considered a “boundary” character
+// (space, punctuation, quote, etc.) but not \ or %.
+func isBoundary(r rune) bool {
+	// Allowed boundary set: whitespace or punctuation/marks, etc.
+	// You can customize the exact set. For instance, you could test
+	// if it's a letter or digit to exclude it. Here we treat
+	// any “space” or “punct” as a boundary.
+	if unicode.IsSpace(r) {
+		return true
+	}
+	if unicode.IsPunct(r) || unicode.IsSymbol(r) {
+		// But exclude backslash and percent from boundary
+		if r == '%' || r == '\\' {
+			return false
+		}
+		return true
+	}
+	// You might also consider `unicode.IsMark(r)` depending on your needs.
 	return false
 }

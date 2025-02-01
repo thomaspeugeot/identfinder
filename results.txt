@@ -19,3 +19,30 @@
 2025/02/01 12:43:03 Repository coder/coder: String to total line ratio: 0.1639 (67890 string lines / 414236 total lines)
 2025/02/01 12:43:03 Repository coder/coder: Matched strings to total strings ratio: 0.0385 (2614 matched / 67890 total strings)
 2025/02/01 12:43:03 Overall identifier match ratio: 0.0369 (11338 matched / 307283 total)
+
+2025/02/01 13:05:47 Scanning repository prasmussen/gdrive (stars=8981)
+2025/02/01 13:05:47 Cloning https://github.com/prasmussen/gdrive.git into repo-prasmussen-gdrive
+2025/02/01 13:05:49 Repository prasmussen/gdrive: String-to-total-line ratio: 0.0992 (2235 string lines / 22520 total lines)
+2025/02/01 13:05:49 Repository prasmussen/gdrive: Matched-strings-to-total-strings ratio: 0.0604 (135 matched / 2235 total strings)
+2025/02/01 13:05:49 Wrote 135 matches for prasmussen/gdrive to prasmussen-gdrive-matches.log
+2025/02/01 13:05:49 Scanning repository vmware-tanzu/velero (stars=8951)
+2025/02/01 13:05:49 Cloning https://github.com/vmware-tanzu/velero.git into repo-vmware-tanzu-velero
+2025/02/01 13:05:54 Repository vmware-tanzu/velero: String-to-total-line ratio: 0.2175 (43629 string lines / 200625 total lines)
+2025/02/01 13:05:54 Repository vmware-tanzu/velero: Matched-strings-to-total-strings ratio: 0.0491 (2141 matched / 43629 total strings)
+2025/02/01 13:05:54 Wrote 2141 matches for vmware-tanzu/velero to vmware-tanzu-velero-matches.log
+2025/02/01 13:05:54 Scanning repository keybase/client (stars=8949)
+2025/02/01 13:05:54 Cloning https://github.com/keybase/client.git into repo-keybase-client
+2025/02/01 13:06:09 Repository keybase/client: String-to-total-line ratio: 0.2044 (190518 string lines / 931945 total lines)
+2025/02/01 13:06:09 Repository keybase/client: Matched-strings-to-total-strings ratio: 0.0638 (12163 matched / 190518 total strings)
+2025/02/01 13:06:09 Wrote 12163 matches for keybase/client to keybase-client-matches.log
+2025/02/01 13:06:09 Scanning repository flannel-io/flannel (stars=8926)
+2025/02/01 13:06:09 Cloning https://github.com/flannel-io/flannel.git into repo-flannel-io-flannel
+2025/02/01 13:06:11 Repository flannel-io/flannel: String-to-total-line ratio: 0.2123 (3011 string lines / 14180 total lines)
+2025/02/01 13:06:11 Repository flannel-io/flannel: Matched-strings-to-total-strings ratio: 0.0585 (176 matched / 3011 total strings)
+2025/02/01 13:06:11 Wrote 176 matches for flannel-io/flannel to flannel-io-flannel-matches.log
+2025/02/01 13:06:11 Scanning repository coder/coder (stars=8876)
+2025/02/01 13:06:11 Cloning https://github.com/coder/coder.git into repo-coder-coder
+2025/02/01 13:06:22 Repository coder/coder: String-to-total-line ratio: 0.1639 (67890 string lines / 414236 total lines)
+2025/02/01 13:06:22 Repository coder/coder: Matched-strings-to-total-strings ratio: 0.0841 (5710 matched / 67890 total strings)
+2025/02/01 13:06:22 Wrote 5710 matches for coder/coder to coder-coder-matches.log
+2025/02/01 13:06:22 Overall identifier match ratio: 0.0661 (20325 matched / 307283 total)
