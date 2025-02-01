@@ -1,21 +1,21 @@
-2025/01/28 09:03:32 Scanning repository boyter/scc (stars=6991)
-2025/01/28 09:03:32 Cloning https://github.com/boyter/scc.git into repo-boyter-scc
-2025/01/28 09:03:35 Repository boyter/scc: String to total line ratio: 0.0179 (19001 string lines / 1062301 total lines)
-2025/01/28 09:03:35 Repository boyter/scc: Matched strings to total strings ratio: 0.0000 (0 matched / 19001 total strings)
-2025/01/28 09:03:35 Scanning repository smallstep/certificates (stars=6967)
-2025/01/28 09:03:35 Cloning https://github.com/smallstep/certificates.git into repo-smallstep-certificates
-2025/01/28 09:03:39 Repository smallstep/certificates: String to total line ratio: 0.0452 (30874 string lines / 683795 total lines)
-2025/01/28 09:03:39 Repository smallstep/certificates: Matched strings to total strings ratio: 0.0000 (0 matched / 30874 total strings)
-2025/01/28 09:03:39 Scanning repository go-yaml/yaml (stars=6953)
-2025/01/28 09:03:39 Cloning https://github.com/go-yaml/yaml.git into repo-go-yaml-yaml
-2025/01/28 09:03:40 Repository go-yaml/yaml: String to total line ratio: 0.0419 (2445 string lines / 58288 total lines)
-2025/01/28 09:03:40 Repository go-yaml/yaml: Matched strings to total strings ratio: 0.0000 (0 matched / 2445 total strings)
-2025/01/28 09:03:40 Scanning repository eddycjy/go-gin-example (stars=6946)
-2025/01/28 09:03:40 Cloning https://github.com/eddycjy/go-gin-example.git into repo-eddycjy-go-gin-example
-2025/01/28 09:03:47 Repository eddycjy/go-gin-example: String to total line ratio: 0.0150 (28373 string lines / 1890284 total lines)
-2025/01/28 09:03:47 Repository eddycjy/go-gin-example: Matched strings to total strings ratio: 0.0000 (0 matched / 28373 total strings)
-2025/01/28 09:03:47 Scanning repository TwiN/gatus (stars=6936)
-2025/01/28 09:03:47 Cloning https://github.com/TwiN/gatus.git into repo-TwiN-gatus
-2025/01/28 09:03:50 Repository TwiN/gatus: String to total line ratio: 0.0616 (8011 string lines / 130130 total lines)
-2025/01/28 09:03:50 Repository TwiN/gatus: Matched strings to total strings ratio: 0.0000 (0 matched / 8011 total strings)
-2025/01/28 09:03:50 Overall identifier match ratio: 0.0000 (0 matched / 88704 total)
+2025/02/01 12:40:14 Scanning repository prasmussen/gdrive (stars=8981)
+2025/02/01 12:40:14 Cloning https://github.com/prasmussen/gdrive.git into repo-prasmussen-gdrive
+2025/02/01 12:40:18 Repository prasmussen/gdrive: String to total line ratio: 0.0992 (2235 string lines / 22520 total lines)
+2025/02/01 12:40:18 Repository prasmussen/gdrive: Matched strings to total strings ratio: 0.0228 (51 matched / 2235 total strings)
+2025/02/01 12:40:18 Scanning repository vmware-tanzu/velero (stars=8951)
+2025/02/01 12:40:18 Cloning https://github.com/vmware-tanzu/velero.git into repo-vmware-tanzu-velero
+2025/02/01 12:40:33 Repository vmware-tanzu/velero: String to total line ratio: 0.2175 (43629 string lines / 200625 total lines)
+2025/02/01 12:40:33 Repository vmware-tanzu/velero: Matched strings to total strings ratio: 0.0137 (596 matched / 43629 total strings)
+2025/02/01 12:40:33 Scanning repository keybase/client (stars=8949)
+2025/02/01 12:40:33 Cloning https://github.com/keybase/client.git into repo-keybase-client
+2025/02/01 12:41:59 Repository keybase/client: String to total line ratio: 0.2044 (190518 string lines / 931945 total lines)
+2025/02/01 12:41:59 Repository keybase/client: Matched strings to total strings ratio: 0.0421 (8021 matched / 190518 total strings)
+2025/02/01 12:41:59 Scanning repository flannel-io/flannel (stars=8926)
+2025/02/01 12:41:59 Cloning https://github.com/flannel-io/flannel.git into repo-flannel-io-flannel
+2025/02/01 12:42:01 Repository flannel-io/flannel: String to total line ratio: 0.2123 (3011 string lines / 14180 total lines)
+2025/02/01 12:42:01 Repository flannel-io/flannel: Matched strings to total strings ratio: 0.0186 (56 matched / 3011 total strings)
+2025/02/01 12:42:01 Scanning repository coder/coder (stars=8876)
+2025/02/01 12:42:01 Cloning https://github.com/coder/coder.git into repo-coder-coder
+2025/02/01 12:43:03 Repository coder/coder: String to total line ratio: 0.1639 (67890 string lines / 414236 total lines)
+2025/02/01 12:43:03 Repository coder/coder: Matched strings to total strings ratio: 0.0385 (2614 matched / 67890 total strings)
+2025/02/01 12:43:03 Overall identifier match ratio: 0.0369 (11338 matched / 307283 total)
