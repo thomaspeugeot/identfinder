@@ -36,40 +36,43 @@ type matchInfo struct {
 	EntireLine string
 }
 
-// -------------------------------------------------------------
-// MAIN
-// -------------------------------------------------------------
-
 func main() {
+	// Define flags
 	var (
 		minStars   int
 		maxStars   int
 		maxResults int
-		githubRepo string
 	)
 
-	flag.IntVar(&minStars, "stars", 1000, "Minimum number of stars")
-	flag.IntVar(&maxStars, "maxstars", 9000, "Maximum number of stars")
-	flag.IntVar(&maxResults, "max", 5, "Max number of repositories to process")
+	flag.IntVar(&minStars, "stars", 1000, "Minimum number of stars for search")
+	flag.IntVar(&maxStars, "maxstars", 9000, "Maximum number of stars for search")
+	flag.IntVar(&maxResults, "max", 5, "Max number of repositories to process (when searching)")
 
-	// If set, e.g. "github.com/user/repo", only that repo is cloned (if needed) & analyzed.
-	flag.StringVar(&githubRepo, "repo", "",
-		"Full GitHub repo path (e.g. 'github.com/user/repo') to clone/analyze. Skips search if set.")
-
+	// Parse flags
 	flag.Parse()
 
-	// If a GitHub repo is provided, skip the search flow and just analyze that one.
-	if githubRepo != "" {
-		log.Printf("Analyzing specified GitHub repo: %s\n", githubRepo)
-		analyzeSingleGitHubRepo(githubRepo)
+	// If the user provided arguments after the flags, interpret them as GitHub repos.
+	args := flag.Args()
+
+	if len(args) > 0 {
+		// --------------------------------------------------------------------
+		// CASE 1: The user specified one or more repos directly in the args
+		// --------------------------------------------------------------------
+		log.Println("Positional arguments detected. Skipping GitHub search.")
+		for _, repoPath := range args {
+			log.Printf("Analyzing requested GitHub repo: %s\n", repoPath)
+			analyzeSingleGitHubRepo(repoPath)
+		}
 
 	} else {
-		// Otherwise, proceed with GitHub search based on stars.
+		// --------------------------------------------------------------------
+		// CASE 2: No positional args => Use the GitHub search logic
+		// --------------------------------------------------------------------
 		ctx := context.Background()
 		tc := oauth2.NewClient(ctx, nil)
 		client := github.NewClient(tc)
 
-		// Search for Go repos with >= minStars and < maxStars stars
+		// Build the search query with star range
 		query := fmt.Sprintf("language:Go stars:%d..%d", minStars, maxStars)
 		searchOpts := &github.SearchOptions{
 			Sort:  "stars",
@@ -109,7 +112,7 @@ func main() {
 		}
 	}
 
-	// Print overall ratio of “strings that contained an identifier” to “total strings seen”
+	// At the end, print overall ratio of “strings that contained an identifier” to “total strings seen”
 	overallRatio := 0.0
 	if totalStrings > 0 {
 		overallRatio = float64(matchedStrings) / float64(totalStrings)
@@ -123,7 +126,7 @@ func main() {
 // -------------------------------------------------------------
 
 // analyzeSingleGitHubRepo takes a GitHub repo path like "github.com/user/repo".
-// If the local clone folder doesn't exist, clones from https://github.com/user/repo.git
+// If the local clone folder doesn't exist, it clones from "https://github.com/user/repo.git"
 // into "repo-github.com-user-repo". Then analyzes it.
 func analyzeSingleGitHubRepo(repoPath string) {
 	// Build a clone URL, e.g. "https://github.com/user/repo.git"

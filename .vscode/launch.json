@@ -12,25 +12,30 @@
             "program": "${workspaceFolder}"
         },
         {
-            "name": "go run main.go -repo github.com/gin-gonic/gin",
+            "name": "go run main.go github.com/gin-gonic/gin",
             "type": "go",
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
             "args": [
-                "-repo",
                 "github.com/gin-gonic/gin"
             ]
         },
         {
-            "name": "go run main.go -repo github.com/gohugoio/hugo",
+            "name": "go run main.go many repos",
             "type": "go",
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}",
             "args": [
-                "-repo",
-                "github.com/gohugoio/hugo"
+                "github.com/kubernetes/kubernetes",
+                "github.com/moby/moby",
+                "github.com/gohugoio/hugo",
+                "github.com/helm/helm",
+                "github.com/gin-gonic/gin",
+                "github.com/labstack/echo",
+                "github.com/spf13/cobra",
+                "github.com/docker/docker",
             ]
         }
     ]
