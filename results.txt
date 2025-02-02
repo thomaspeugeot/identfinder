@@ -46,3 +46,17 @@
 2025/02/01 13:06:22 Repository coder/coder: Matched-strings-to-total-strings ratio: 0.0841 (5710 matched / 67890 total strings)
 2025/02/01 13:06:22 Wrote 5710 matches for coder/coder to coder-coder-matches.log
 2025/02/01 13:06:22 Overall identifier match ratio: 0.0661 (20325 matched / 307283 total)
+2025/02/02 09:27:35 Analyzing specified GitHub repo: github.com/gin-gonic/gin
+2025/02/02 09:27:35 Cloning https://github.com/gin-gonic/gin.git into repo-github.com-gin-gonic-gin
+2025/02/02 09:27:35 Cloning https://github.com/gin-gonic/gin.git into repo-github.com-gin-gonic-gin
+2025/02/02 09:27:37 Repository github.com/gin-gonic/gin: String-to-total-line ratio: 0.3076 (6203 string lines / 20166 total lines)
+2025/02/02 09:27:37 Repository github.com/gin-gonic/gin: Matched-strings-to-total-strings ratio: 0.0193 (120 matched / 6203 total strings)
+2025/02/02 09:27:37 Wrote 120 matches for github.com/gin-gonic/gin to github.com-gin-gonic-gin-matches.log
+2025/02/02 09:27:37 Overall identifier match ratio: 0.0193 (120 matched / 6203 total)
+2025/02/02 10:08:42 Analyzing specified GitHub repo: github.com/gohugoio/hugo
+2025/02/02 10:08:42 Cloning https://github.com/gohugoio/hugo.git into repo-github.com-gohugoio-hugo
+2025/02/02 10:08:42 Cloning https://github.com/gohugoio/hugo.git into repo-github.com-gohugoio-hugo
+2025/02/02 10:08:46 Repository github.com/gohugoio/hugo: String-to-total-line ratio: 0.2212 (43456 string lines / 196439 total lines)
+2025/02/02 10:08:46 Repository github.com/gohugoio/hugo: Matched-strings-to-total-strings ratio: 0.0379 (1645 matched / 43456 total strings)
+2025/02/02 10:08:46 Wrote 1645 matches for github.com/gohugoio/hugo to github.com-gohugoio-hugo-matches.log
+2025/02/02 10:08:46 Overall identifier match ratio: 0.0379 (1645 matched / 43456 total)

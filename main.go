@@ -19,13 +19,15 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// -------------------------------------------------------------
 // Global counters for ratio calculation
+// -------------------------------------------------------------
 var (
 	totalStrings   int
 	matchedStrings int
 )
 
-// matchInfo holds details about each matched string.
+// matchInfo holds details about each matched string literal.
 type matchInfo struct {
 	File       string
 	LineNumber int
@@ -34,110 +36,80 @@ type matchInfo struct {
 	EntireLine string
 }
 
+// -------------------------------------------------------------
+// MAIN
+// -------------------------------------------------------------
+
 func main() {
 	var (
 		minStars   int
 		maxStars   int
 		maxResults int
+		githubRepo string
 	)
+
 	flag.IntVar(&minStars, "stars", 1000, "Minimum number of stars")
 	flag.IntVar(&maxStars, "maxstars", 9000, "Maximum number of stars")
 	flag.IntVar(&maxResults, "max", 5, "Max number of repositories to process")
+
+	// If set, e.g. "github.com/user/repo", only that repo is cloned (if needed) & analyzed.
+	flag.StringVar(&githubRepo, "repo", "",
+		"Full GitHub repo path (e.g. 'github.com/user/repo') to clone/analyze. Skips search if set.")
+
 	flag.Parse()
 
-	ctx := context.Background()
-	tc := oauth2.NewClient(ctx, nil)
-	client := github.NewClient(tc)
+	// If a GitHub repo is provided, skip the search flow and just analyze that one.
+	if githubRepo != "" {
+		log.Printf("Analyzing specified GitHub repo: %s\n", githubRepo)
+		analyzeSingleGitHubRepo(githubRepo)
 
-	// Search for Go repos with >= minStars and < maxStars stars
-	query := fmt.Sprintf("language:Go stars:%d..%d", minStars, maxStars)
-	searchOpts := &github.SearchOptions{
-		Sort:  "stars",
-		Order: "desc",
-		ListOptions: github.ListOptions{
-			PerPage: maxResults,
-		},
-	}
+	} else {
+		// Otherwise, proceed with GitHub search based on stars.
+		ctx := context.Background()
+		tc := oauth2.NewClient(ctx, nil)
+		client := github.NewClient(tc)
 
-	result, _, err := client.Search.Repositories(ctx, query, searchOpts)
-	if err != nil {
-		log.Fatalf("Error searching repositories: %v", err)
-	}
-
-	for i, repo := range result.Repositories {
-		if i >= maxResults {
-			break
+		// Search for Go repos with >= minStars and < maxStars stars
+		query := fmt.Sprintf("language:Go stars:%d..%d", minStars, maxStars)
+		searchOpts := &github.SearchOptions{
+			Sort:  "stars",
+			Order: "desc",
+			ListOptions: github.ListOptions{
+				PerPage: maxResults,
+			},
 		}
-		log.Printf("Scanning repository %s (stars=%d)\n",
-			repo.GetFullName(), repo.GetStargazersCount())
 
-		tmpDir := fmt.Sprintf("repo-%s", strings.ReplaceAll(repo.GetFullName(), "/", "-"))
+		result, _, err := client.Search.Repositories(ctx, query, searchOpts)
+		if err != nil {
+			log.Fatalf("Error searching repositories: %v", err)
+		}
 
-		// CHANGE #1: Check if directory already exists. If it doesn't exist, clone.
-		if _, statErr := os.Stat(tmpDir); os.IsNotExist(statErr) {
-			if err := cloneRepo(repo.GetCloneURL(), tmpDir); err != nil {
-				log.Printf("Error cloning %s: %v", repo.GetFullName(), err)
-				continue
+		for i, repo := range result.Repositories {
+			if i >= maxResults {
+				break
 			}
-		} else {
-			log.Printf("Directory %q already exists, skipping clone", tmpDir)
-		}
+			log.Printf("Scanning repository %s (stars=%d)\n",
+				repo.GetFullName(), repo.GetStargazersCount())
 
-		// CHANGE #2: Remove the call to defer os.RemoveAll(tmpDir)
-		// (so the directory is not removed after processing).
+			// Construct local directory name for cloning (if needed)
+			tmpDir := fmt.Sprintf("repo-%s", strings.ReplaceAll(repo.GetFullName(), "/", "-"))
 
-		goFiles := gatherGoFiles(tmpDir)
-
-		var totalLines, stringLines, repoTotalStrings, repoMatchedStrings int
-		var allMatches []matchInfo
-
-		for _, fpath := range goFiles {
-			lines, strLines, matchedStrs, matches := analyzeFileWithLines(fpath)
-			totalLines += lines
-			stringLines += strLines
-			repoTotalStrings += strLines
-			repoMatchedStrings += matchedStrs
-			allMatches = append(allMatches, matches...)
-		}
-
-		// Calculate ratios for the repository
-		repoLineRatio := 0.0
-		if totalLines > 0 {
-			repoLineRatio = float64(stringLines) / float64(totalLines)
-		}
-		repoStringRatio := 0.0
-		if repoTotalStrings > 0 {
-			repoStringRatio = float64(repoMatchedStrings) / float64(repoTotalStrings)
-		}
-
-		log.Printf("Repository %s: String-to-total-line ratio: %.4f (%d string lines / %d total lines)\n",
-			repo.GetFullName(), repoLineRatio, stringLines, totalLines)
-		log.Printf("Repository %s: Matched-strings-to-total-strings ratio: %.4f (%d matched / %d total strings)\n",
-			repo.GetFullName(), repoStringRatio, repoMatchedStrings, repoTotalStrings)
-
-		// Write matches to a file if any
-		if len(allMatches) > 0 {
-			reportFile := strings.ReplaceAll(repo.GetFullName(), "/", "-") + "-matches.log"
-			f, err := os.Create(reportFile)
-			if err != nil {
-				log.Printf("Error creating report file %s: %v", reportFile, err)
-				continue
+			// If directory doesn't exist, clone
+			if _, statErr := os.Stat(tmpDir); os.IsNotExist(statErr) {
+				if err := cloneRepo(repo.GetCloneURL(), tmpDir); err != nil {
+					log.Printf("Error cloning %s: %v", repo.GetFullName(), err)
+					continue
+				}
+			} else {
+				log.Printf("Directory %q already exists, skipping clone", tmpDir)
 			}
-			defer f.Close()
 
-			for _, m := range allMatches {
-				line := fmt.Sprintf(
-					"%s:%d -> identifier=%s; string=%q; entire_line=%q\n",
-					m.File, m.LineNumber, m.Identifier, m.StringText, m.EntireLine,
-				)
-				_, _ = f.WriteString(line)
-			}
-			log.Printf("Wrote %d matches for %s to %s\n",
-				len(allMatches), repo.GetFullName(), reportFile)
+			// Analyze the local repo (already cloned or existing)
+			analyzeLocalRepo(tmpDir, repo.GetFullName())
 		}
 	}
 
-	// Print ratio of “strings that contained an identifier” to “total strings seen”
+	// Print overall ratio of “strings that contained an identifier” to “total strings seen”
 	overallRatio := 0.0
 	if totalStrings > 0 {
 		overallRatio = float64(matchedStrings) / float64(totalStrings)
@@ -146,7 +118,101 @@ func main() {
 		overallRatio, matchedStrings, totalStrings)
 }
 
-// gatherGoFiles recursively gathers all .go files under the specified root.
+// -------------------------------------------------------------
+// GITHUB REPO CLONING & ANALYSIS
+// -------------------------------------------------------------
+
+// analyzeSingleGitHubRepo takes a GitHub repo path like "github.com/user/repo".
+// If the local clone folder doesn't exist, clones from https://github.com/user/repo.git
+// into "repo-github.com-user-repo". Then analyzes it.
+func analyzeSingleGitHubRepo(repoPath string) {
+	// Build a clone URL, e.g. "https://github.com/user/repo.git"
+	cloneURL := "https://" + strings.TrimSuffix(repoPath, ".git") + ".git"
+
+	// Local folder name, e.g. "repo-github.com-user-repo"
+	localDir := fmt.Sprintf("repo-%s", strings.ReplaceAll(repoPath, "/", "-"))
+
+	// If directory doesn't exist, clone
+	if _, err := os.Stat(localDir); os.IsNotExist(err) {
+		log.Printf("Cloning %s into %s\n", cloneURL, localDir)
+		if err := cloneRepo(cloneURL, localDir); err != nil {
+			log.Printf("Error cloning %s: %v", cloneURL, err)
+			return
+		}
+	} else {
+		log.Printf("Directory %q already exists, skipping clone", localDir)
+	}
+
+	// Analyze that local directory
+	analyzeLocalRepo(localDir, repoPath)
+}
+
+// cloneRepo does a shallow clone from the given gitURL into dest
+func cloneRepo(gitURL, dest string) error {
+	log.Printf("Cloning %s into %s", gitURL, dest)
+	cmd := exec.Command("git", "clone", "--depth=1", gitURL, dest)
+	return cmd.Run()
+}
+
+// -------------------------------------------------------------
+// LOCAL REPO ANALYSIS
+// -------------------------------------------------------------
+
+// analyzeLocalRepo walks all Go files in repoDir, analyzes them, prints stats,
+// and writes match logs to a file named "<repoName>-matches.log" if there are matches.
+func analyzeLocalRepo(repoDir, repoName string) {
+	goFiles := gatherGoFiles(repoDir)
+
+	var totalLines, stringLines, repoTotalStrings, repoMatchedStrings int
+	var allMatches []matchInfo
+
+	for _, fpath := range goFiles {
+		lines, strLines, matchedStrs, matches := analyzeFileWithLines(fpath)
+		totalLines += lines
+		stringLines += strLines
+		repoTotalStrings += strLines
+		repoMatchedStrings += matchedStrs
+		allMatches = append(allMatches, matches...)
+	}
+
+	// Calculate ratios for the repository
+	repoLineRatio := 0.0
+	if totalLines > 0 {
+		repoLineRatio = float64(stringLines) / float64(totalLines)
+	}
+	repoStringRatio := 0.0
+	if repoTotalStrings > 0 {
+		repoStringRatio = float64(repoMatchedStrings) / float64(repoTotalStrings)
+	}
+
+	log.Printf("Repository %s: String-to-total-line ratio: %.4f (%d string lines / %d total lines)\n",
+		repoName, repoLineRatio, stringLines, totalLines)
+	log.Printf("Repository %s: Matched-strings-to-total-strings ratio: %.4f (%d matched / %d total strings)\n",
+		repoName, repoStringRatio, repoMatchedStrings, repoTotalStrings)
+
+	// If matches found, write them to a log file
+	if len(allMatches) > 0 {
+		logFile := strings.ReplaceAll(repoName, "/", "-") + "-matches.log"
+		f, err := os.Create(logFile)
+		if err != nil {
+			log.Printf("Error creating report file %s: %v", logFile, err)
+			return
+		}
+		defer f.Close()
+
+		for _, m := range allMatches {
+			line := fmt.Sprintf(
+				"%s:%d -> identifier=%s; string=%q; entire_line=%q\n",
+				m.File, m.LineNumber, m.Identifier, m.StringText, m.EntireLine,
+			)
+			_, _ = f.WriteString(line)
+		}
+		log.Printf("Wrote %d matches for %s to %s\n",
+			len(allMatches), repoName, logFile)
+	}
+}
+
+// gatherGoFiles recursively gathers all .go files under the specified root directory.
 func gatherGoFiles(root string) []string {
 	var goFiles []string
 	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -158,18 +224,15 @@ func gatherGoFiles(root string) []string {
 	return goFiles
 }
 
-// cloneRepo does a shallow clone
-func cloneRepo(gitURL, dest string) error {
-	log.Printf("Cloning %s into %s", gitURL, dest)
-	cmd := exec.Command("git", "clone", "--depth=1", gitURL, dest)
-	return cmd.Run()
-}
+// -------------------------------------------------------------
+// FILE-LEVEL ANALYSIS
+// -------------------------------------------------------------
 
 // analyzeFileWithLines parses a single Go file, counts total lines, and inspects
 // string literals to see if they contain any in-scope identifiers. Returns
-// a slice of matchInfo (including the entire line from the source file).
+// line counts, match counts, and a slice of matchInfo (including the entire line).
 func analyzeFileWithLines(filePath string) (int, int, int, []matchInfo) {
-	// Read all lines so we can log the "entire line" for each match
+	// Read all lines so we can log the entire line if there's a match
 	srcLines, err := readFileLines(filePath)
 	if err != nil || len(srcLines) == 0 {
 		return 0, 0, 0, nil
@@ -181,17 +244,20 @@ func analyzeFileWithLines(filePath string) (int, int, int, []matchInfo) {
 		return 0, 0, 0, nil
 	}
 
-	// Find total line count from token.File
+	// Determine total line count from the token.File
 	fileObj := fset.File(node.Pos())
 	if fileObj == nil {
 		return 0, 0, 0, nil
 	}
 	totalLines := fileObj.LineCount()
 
-	// Our visitor will track scopes (function params, local vars, etc.)
+	// Use our scopeVisitor to track local variables, function parameters, etc.
 	v := newScopeVisitor(fset, filePath, srcLines)
 	ast.Walk(v, node)
 
+	// v.stringCount: how many string literals in this file
+	// v.matchCount: how many matched an in-scope identifier
+	// v.matches: the details of each match
 	return totalLines, v.stringCount, v.matchCount, v.matches
 }
 
@@ -211,10 +277,12 @@ func readFileLines(filePath string) ([]string, error) {
 	return lines, scanner.Err()
 }
 
-// -------------------------------------------------------------------
-// Scope Tracking Visitor
-// -------------------------------------------------------------------
+// -------------------------------------------------------------
+// SCOPE VISITOR & IDENTIFIER MATCHING
+// -------------------------------------------------------------
 
+// scopeVisitor holds state for AST traversal, including a stack of scopes
+// that track which identifiers (vars, params, etc.) are in scope.
 type scopeVisitor struct {
 	fset        *token.FileSet
 	filePath    string
@@ -250,13 +318,14 @@ func (v *scopeVisitor) popScope() {
 	v.scopeStack = v.scopeStack[:len(v.scopeStack)-1]
 }
 
+// addName adds an identifier to the top scope in the stack
 func (v *scopeVisitor) addName(name string) {
 	top := v.scopeStack[len(v.scopeStack)-1]
 	top.names[name] = struct{}{}
 }
 
+// inScope returns a list of all names in all active scopes
 func (v *scopeVisitor) inScope() []string {
-	// gather all names from all active scopes
 	var results []string
 	for _, s := range v.scopeStack {
 		for n := range s.names {
@@ -266,6 +335,7 @@ func (v *scopeVisitor) inScope() []string {
 	return results
 }
 
+// Visit implements the ast.Visitor interface
 func (v *scopeVisitor) Visit(n ast.Node) ast.Visitor {
 	switch node := n.(type) {
 
@@ -274,9 +344,9 @@ func (v *scopeVisitor) Visit(n ast.Node) ast.Visitor {
 		return v
 
 	case *ast.FuncDecl:
-		// Push a new scope for the function
+		// Push a scope for the function
 		v.pushScope()
-		// Add the function name itself
+		// Add the function name
 		v.addName(node.Name.Name)
 		// Add function parameters
 		if node.Type.Params != nil {
@@ -286,7 +356,7 @@ func (v *scopeVisitor) Visit(n ast.Node) ast.Visitor {
 				}
 			}
 		}
-		// Add function results (if they are named)
+		// Add named result parameters
 		if node.Type.Results != nil {
 			for _, result := range node.Type.Results.List {
 				for _, rName := range result.Names {
@@ -299,11 +369,11 @@ func (v *scopeVisitor) Visit(n ast.Node) ast.Visitor {
 			ast.Walk(v, node.Body)
 		}
 		v.popScope()
-		// Return nil so we don’t re-walk
+		// Return nil so we don't re-walk
 		return nil
 
 	case *ast.BlockStmt:
-		// Push a block scope
+		// Push a scope for each block
 		v.pushScope()
 		for _, stmt := range node.List {
 			ast.Walk(v, stmt)
@@ -312,7 +382,7 @@ func (v *scopeVisitor) Visit(n ast.Node) ast.Visitor {
 		return nil
 
 	case *ast.AssignStmt:
-		// For short variable declarations x := expr
+		// For short variable declarations: x := 123
 		if node.Tok.String() == ":=" {
 			for _, lh := range node.Lhs {
 				if ident, ok := lh.(*ast.Ident); ok {
@@ -323,7 +393,7 @@ func (v *scopeVisitor) Visit(n ast.Node) ast.Visitor {
 		return v
 
 	case *ast.DeclStmt:
-		// Local var/const/type declarations
+		// For local var/const/type declarations
 		if gen, ok := node.Decl.(*ast.GenDecl); ok {
 			for _, spec := range gen.Specs {
 				switch s := spec.(type) {
@@ -339,15 +409,17 @@ func (v *scopeVisitor) Visit(n ast.Node) ast.Visitor {
 		return v
 
 	case *ast.BasicLit:
-		// Check string literals
+		// If it's a string, check for in-scope identifiers
 		if node.Kind == token.STRING {
 			v.stringCount++
 			v.checkString(node)
 		}
 	}
+
 	return v
 }
 
+// checkString checks the given string literal for any in-scope identifiers.
 func (v *scopeVisitor) checkString(basicLit *ast.BasicLit) {
 	literalText := strings.Trim(basicLit.Value, "`\"")
 	linePos := v.fset.Position(basicLit.Pos()).Line
@@ -356,13 +428,15 @@ func (v *scopeVisitor) checkString(basicLit *ast.BasicLit) {
 	names := v.inScope()
 	for _, name := range names {
 		if containsIdentifier(literalText, name) {
-			// Found a valid match
 			v.matchCount++
 			matchedStrings++
+
+			// Grab entire source line
 			entireLine := ""
 			if linePos-1 >= 0 && linePos-1 < len(v.srcLines) {
 				entireLine = v.srcLines[linePos-1]
 			}
+			// Record match
 			v.matches = append(v.matches, matchInfo{
 				File:       v.filePath,
 				LineNumber: linePos,
@@ -370,18 +444,18 @@ func (v *scopeVisitor) checkString(basicLit *ast.BasicLit) {
 				StringText: literalText,
 				EntireLine: entireLine,
 			})
-			// We stop at the first matching identifier to avoid “double counting.”
+			// Stop after first matching identifier so we don't double-count
 			break
 		}
 	}
 
-	// Also increment global total string count
+	// Also increment the global total string count
 	totalStrings++
 }
 
 // containsIdentifier returns true if `id` appears in `literal` such that it’s
-// “surrounded by spaces, quotes, or punctuation” and NOT preceded directly
-// by '%' or '\'. This avoids partial matches like “r” in “form-urlencoded”.
+// “surrounded by boundary characters” (space, punctuation, quotes, etc.)
+// and NOT preceded directly by '%' or '\'.
 func containsIdentifier(literal, id string) bool {
 	if id == "" {
 		return false
@@ -393,25 +467,24 @@ func containsIdentifier(literal, id string) bool {
 		if idx == -1 {
 			break
 		}
-		// Absolute position in the literal
 		pos := searchStart + idx
 		end := pos + len(id) - 1
 
-		// Check preceding char
+		// Check preceding char (if not start of string)
 		if pos > 0 {
 			prev := rune(literal[pos-1])
-			// If it's '\' or '%', skip
+			// If it's '\' or '%', skip this occurrence
 			if prev == '\\' || prev == '%' {
 				searchStart = pos + len(id)
 				continue
 			}
-			// Must be a boundary if it's not start-of-string
+			// Otherwise, must be boundary
 			if !isBoundary(prev) {
 				searchStart = pos + len(id)
 				continue
 			}
 		}
-		// Check following char
+		// Check following char (if not end of string)
 		if end < len(literal)-1 {
 			next := rune(literal[end+1])
 			if !isBoundary(next) {
@@ -424,23 +497,20 @@ func containsIdentifier(literal, id string) bool {
 	return false
 }
 
-// isBoundary returns true if r is considered a “boundary” character
-// (space, punctuation, quote, etc.) but not \ or %.
+// isBoundary returns true if r is considered a “boundary” character:
+// whitespace, punctuation, or symbol (but excluding backslash and percent).
 func isBoundary(r rune) bool {
-	// Allowed boundary set: whitespace or punctuation/marks, etc.
-	// You can customize the exact set. For instance, you could test
-	// if it's a letter or digit to exclude it. Here we treat
-	// any “space” or “punct” as a boundary.
+	// Check for whitespace
 	if unicode.IsSpace(r) {
 		return true
 	}
+	// Check punctuation/symbol
 	if unicode.IsPunct(r) || unicode.IsSymbol(r) {
-		// But exclude backslash and percent from boundary
-		if r == '%' || r == '\\' {
+		// Exclude '\' and '%'
+		if r == '\\' || r == '%' {
 			return false
 		}
 		return true
 	}
-	// You might also consider `unicode.IsMark(r)` depending on your needs.
 	return false
 }
