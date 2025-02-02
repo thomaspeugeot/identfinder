@@ -72,11 +72,19 @@ func main() {
 			repo.GetFullName(), repo.GetStargazersCount())
 
 		tmpDir := fmt.Sprintf("repo-%s", strings.ReplaceAll(repo.GetFullName(), "/", "-"))
-		if err := cloneRepo(repo.GetCloneURL(), tmpDir); err != nil {
-			log.Printf("Error cloning %s: %v", repo.GetFullName(), err)
-			continue
+
+		// CHANGE #1: Check if directory already exists. If it doesn't exist, clone.
+		if _, statErr := os.Stat(tmpDir); os.IsNotExist(statErr) {
+			if err := cloneRepo(repo.GetCloneURL(), tmpDir); err != nil {
+				log.Printf("Error cloning %s: %v", repo.GetFullName(), err)
+				continue
+			}
+		} else {
+			log.Printf("Directory %q already exists, skipping clone", tmpDir)
 		}
-		defer os.RemoveAll(tmpDir)
+
+		// CHANGE #2: Remove the call to defer os.RemoveAll(tmpDir)
+		// (so the directory is not removed after processing).
 
 		goFiles := gatherGoFiles(tmpDir)
 
