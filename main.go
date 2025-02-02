@@ -37,6 +37,16 @@ type matchInfo struct {
 }
 
 func main() {
+	// -------------------------------------------
+	// Redirect log output to "result.log"
+	// -------------------------------------------
+	f, err := os.Create("result.log")
+	if err != nil {
+		log.Fatalf("Error creating result.log: %v", err)
+	}
+	defer f.Close()
+	log.SetOutput(f)
+
 	// Define flags
 	var (
 		minStars   int
